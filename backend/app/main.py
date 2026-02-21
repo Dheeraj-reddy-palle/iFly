@@ -14,13 +14,10 @@ app = FastAPI(
 )
 
 # Environment-aware CORS setup
-if settings.env == "development":
-    origins = ["*"]
+if settings.env == "production" and settings.cors_origins:
+    origins = [o.strip() for o in settings.cors_origins.split(",")]
 else:
-    origins = [
-        "https://ifly.example.com",
-        "https://api.ifly.example.com"
-    ]
+    origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,

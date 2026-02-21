@@ -43,11 +43,13 @@ def load_deployed_model():
     try:
         deployed_reg = db.query(ModelRegistry).filter(ModelRegistry.deployed == True).first()
         if not deployed_reg:
-            raise RuntimeError("CRITICAL STARTUP ERROR: No deployed model found in model_registry. Refusing to fallback securely.")
+            logger.warning("No deployed model found in model_registry. Server will start without prediction capability.")
+            return
             
         model_path = deployed_reg.file_path
         if not os.path.exists(model_path):
-            raise RuntimeError(f"CRITICAL STARTUP ERROR: Deployed model file missing at path: {model_path}")
+            logger.warning(f"Deployed model file missing at path: {model_path}. Skipping load.")
+            return
             
         new_model = joblib.load(model_path)
         
@@ -59,13 +61,15 @@ def load_deployed_model():
             with open(metadata_path, 'r') as f:
                 new_metadata = json.load(f)
         else:
-            raise RuntimeError(f"CRITICAL STARTUP ERROR: Missing required model_metadata.json")
+            logger.warning("Missing model_metadata.json. Skipping load.")
+            return
             
         if os.path.exists(residual_stats_path):
             with open(residual_stats_path, 'r') as f:
                 new_residual_stats = json.load(f)
         else:
-            raise RuntimeError(f"CRITICAL STARTUP ERROR: Missing required residual_stats.json")
+            logger.warning("Missing residual_stats.json. Skipping load.")
+            return
             
         # Atomic swap
         model = new_model
@@ -96,7 +100,10 @@ async def poll_model_updates():
 @router.on_event("startup")
 async def startup_event():
     logger.info("Initializing ML Prediction Router...")
-    load_deployed_model()
+    try:
+        load_deployed_model()
+    except Exception as e:
+        logger.error(f"Model loading failed during startup: {e}. Server will start without prediction.")
     asyncio.create_task(poll_model_updates())
 
 @router.get("/model-info")

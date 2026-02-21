@@ -14,8 +14,11 @@ class Settings(BaseSettings):
     
     # Third Party: Amadeus
     amadeus_base_url: str = "https://test.api.amadeus.com"
-    amadeus_api_key: str  # Required parameter. Starts app fail-fast if missing.
-    amadeus_api_secret: str  # Required parameter. Starts app fail-fast if missing.
+    amadeus_api_key: str = ""  # Optional for prediction-only deployments
+    amadeus_api_secret: str = ""  # Optional for prediction-only deployments
+    
+    # CORS
+    cors_origins: str = ""  # Comma-separated production origins
     
     # Machine Learning (Future)
     ml_model_path: Optional[str] = None
