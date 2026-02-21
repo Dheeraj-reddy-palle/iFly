@@ -1,9 +1,8 @@
-name: Daily Flight Data Collector
-
+Bname: Daily Flight Data Collector
 on:
   schedule:
     # Runs at 03:00 UTC every day
-    - cron: '0 3,11,19 * * *'
+    - cron: '0 3 * * *'
   
   # Allows you to trigger the workflow manually from the Actions tab
   workflow_dispatch:
