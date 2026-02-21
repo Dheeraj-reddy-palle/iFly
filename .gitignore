@@ -1,5 +1,32 @@
+# Python
 venv/
 .env
 __pycache__/
 *.pyc
+*.pyo
+
+# OS
 .DS_Store
+
+# Logs
+*.log
+
+# Editor backups
+*.save
+*.swp
+
+# Model artifacts (large binary files)
+backend/models/*.pkl
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# IDE
+.vscode/
+.idea/
+
+# Scripts (not needed in repo)
+restructure.sh
+cleanup.sh

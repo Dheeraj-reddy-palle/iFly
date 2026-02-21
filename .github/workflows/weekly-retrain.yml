@@ -1,0 +1,38 @@
+name: Weekly ML Retrain Pipeline
+
+on:
+  schedule:
+    # Run at 02:00 UTC every Sunday
+    - cron: '0 2 * * 0'
+  workflow_dispatch: # Allow manual triggers
+
+concurrency:
+  group: 'ml-retrain'
+  cancel-in-progress: false
+
+jobs:
+  retrain-model:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          
+      - name: Run Retrain Pipeline
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONPATH: ${{ github.workspace }}/backend
+        working-directory: backend
+        run: |
+          python -m ml.retrain_pipeline

@@ -1,0 +1,18 @@
+# Python
+venv/
+.env
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs
+*.log
+
+# Editor backups
+*.save
+
+# OS
+.DS_Store
+
+# Model artifacts
+models/*.pkl

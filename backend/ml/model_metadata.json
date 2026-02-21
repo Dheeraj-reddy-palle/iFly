@@ -1,0 +1,33 @@
+{
+    "validation_strategy": "rolling-90-14-window",
+    "training_row_count": 17512,
+    "features": [
+        "distance_km",
+        "stops",
+        "month",
+        "weekday",
+        "departure_hour_bucket",
+        "duration_minutes",
+        "days_until_departure",
+        "route_rolling_mean_30d",
+        "route_rolling_std_30d",
+        "airline_route_mean_price",
+        "route_offer_count_7d",
+        "route_mean_7d",
+        "route_price_momentum",
+        "route_volatility_index",
+        "airline_route_mean_7d",
+        "airline_route_volatility_7d",
+        "airline_route_offer_count_7d",
+        "airline_price_relative_to_route_mean",
+        "airline_freq",
+        "route_key_freq"
+    ],
+    "metrics": {
+        "Mean_Test_R2": 0.44193144285259733,
+        "Mean_Test_MAE": 171.2484482935195,
+        "Mean_Test_RMSE": 389.76295075934263,
+        "Residual_Distance_Corr": 0.285710670772794
+    },
+    "timestamp": "2026-02-21T21:01:14.338729"
+}
