@@ -53,6 +53,16 @@ def load_deployed_model():
             model_path = os.path.join(BASE_DIR, "models", filename)
             logger.info(f"Original path not found, trying relative: {model_path}")
         
+        # If .pkl doesn't exist, try decompressing .pkl.gz
+        if not os.path.exists(model_path) and os.path.exists(model_path + ".gz"):
+            import gzip
+            import shutil
+            logger.info(f"Decompressing {model_path}.gz ...")
+            with gzip.open(model_path + ".gz", 'rb') as f_in:
+                with open(model_path, 'wb') as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            logger.info(f"Decompressed model to {model_path}")
+        
         if not os.path.exists(model_path):
             logger.warning(f"Deployed model file missing at path: {model_path}. Skipping load.")
             return
