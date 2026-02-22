@@ -35,7 +35,7 @@ Flight prices are notoriously unpredictable. The same route can vary by hundreds
 
 In plain terms, here's what iFly does end-to-end:
 
-1. **Data Collection** — A scheduled pipeline calls the Amadeus Flight Offers API twice daily, rotating through 200+ routes. It respects API quotas, handles rate limits with exponential backoff, and deduplicates offers using SHA-256 hashes.
+1. **Data Collection** — A scheduled pipeline collects flight pricing data twice daily using a **three-provider failover chain**: Amadeus API (real pricing) → AviationStack API (real schedules + estimated pricing) → Synthetic Provider (DB-backed Gaussian estimates). It rotates through 50 curated routes, respects API quotas, handles rate limits with exponential backoff, and deduplicates offers using SHA-256 hashes.
 
 2. **Feature Engineering** — Raw pricing data is enriched with rolling statistics (30-day means, 7-day volatility, price momentum) computed via SQL window functions. These windows use `ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING` — the `1 PRECEDING` boundary ensures the current row's data is never included, eliminating temporal leakage at the database level.
 
@@ -51,7 +51,10 @@ In plain terms, here's what iFly does end-to-end:
 
 ```mermaid
 graph TD
-    A[Amadeus API] -->|Twice Daily| B[PostgreSQL]
+    A1[Amadeus API] -->|Primary| PM[Provider Manager]
+    A2[AviationStack API] -->|Secondary| PM
+    A3[Synthetic Provider] -->|Fallback| PM
+    PM -->|Failover Chain| B[PostgreSQL]
     B -->|SQL Window Features| C[Feature Engineering]
     C -->|Chronological Split| D[Training Pipeline]
     D -->|Walk-Forward Validation| E[XGBoost Model]
@@ -63,8 +66,18 @@ graph TD
     J -->|EUR ↔ INR| K[Price Display]
     
     L[GitHub Actions] -->|Weekly| D
-    L -->|Twice Daily| A
+    L -->|Twice Daily| PM
 ```
+
+### Multi-Provider Ingestion
+
+The data collection pipeline uses a deterministic failover chain to ensure **continuous data flow** even when APIs are exhausted:
+
+| Priority | Provider | Source | Quota | Data Type |
+|----------|----------|--------|-------|-----------|
+| 1️⃣ | **Amadeus** | Real API pricing | 2,000/month | Real flight offers with actual prices |
+| 2️⃣ | **AviationStack** | Real schedules + DB pricing | 100/month | Real flight schedules, historical price estimates |
+| 3️⃣ | **Synthetic** | DB-backed Gaussian | 200/day | Realistic estimates from route statistics |
 
 ### Backend Architecture
 
@@ -236,8 +249,9 @@ Dashboard available at `http://localhost:5173`
 | `DATABASE_URL` | ✅ | PostgreSQL connection string |
 | `ENV` | ✅ | Set to `production` |
 | `CORS_ORIGINS` | ❌ | Extra allowed origins (comma-separated) |
-| `AMADEUS_API_KEY` | ❌ | Amadeus API key (for data collection) |
+| `AMADEUS_API_KEY` | ❌ | Amadeus API key (primary data provider) |
 | `AMADEUS_API_SECRET` | ❌ | Amadeus API secret |
+| `AVIATIONSTACK_API_KEY` | ❌ | AviationStack API key (secondary provider, 100 free calls/month) |
 
 > **Note:** Render's free tier has a cold start of ~50 seconds after 15 minutes of inactivity. The first request may be slow.
 
@@ -286,7 +300,14 @@ iFly/
 │   │   ├── feature_engineering.py # SQL window features (20 features)
 │   │   └── residual_stats.json    # Variance interval statistics
 │   ├── data_collector/
-│   │   └── collector.py           # Quota-aware Amadeus data collection
+│   │   ├── collector.py           # Multi-provider data collection pipeline
+│   │   ├── routes.py              # 50 curated high-value routes
+│   │   └── providers/             # Provider abstraction layer
+│   │       ├── base.py            # FlightProviderInterface (abstract)
+│   │       ├── amadeus_provider.py    # Amadeus API (primary)
+│   │       ├── aviationstack_provider.py  # AviationStack (secondary)
+│   │       ├── synthetic_provider.py  # DB-backed fallback
+│   │       └── provider_manager.py    # Failover orchestration
 │   ├── models/                    # Model artifacts (.pkl.gz)
 │   ├── migrations/                # Alembic schema migrations
 │   ├── requirements.txt
@@ -327,6 +348,7 @@ iFly/
 | `stops` | Integer | Number of stops |
 | `duration` | String(20) | ISO 8601 duration |
 | `distance_km` | Float | Haversine distance |
+| `provider_name` | String(50) | Data source (`amadeus`, `aviationstack`, `synthetic`) |
 | `created_at` | DateTime | Collection timestamp |
 
 ### `model_registry` — Version control for ML models

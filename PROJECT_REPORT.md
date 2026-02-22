@@ -217,19 +217,56 @@ Each panel manages its own state and API calls independently, preventing cascadi
 
 # Chapter 4 — Data Collection Engine
 
-## 4.1 Amadeus API Integration
+## 4.1 Multi-Provider Architecture
+
+The data collection pipeline employs a **three-provider failover chain** to ensure continuous data flow regardless of API quota availability:
+
+```
+Provider Manager (Failover Orchestrator)
+    ├── Amadeus API         (Primary — real pricing, 2000 calls/month)
+    ├── AviationStack API   (Secondary — real schedules + estimated pricing, 100 calls/month)
+    └── Synthetic Provider  (Fallback — DB-backed Gaussian estimates, 200/day)
+```
+
+Each provider implements a common `FlightProviderInterface` that enforces:
+- Identical output schema (origin, destination, price, airline, etc.)
+- EUR-only currency
+- `provider_name` field for data source traceability
+- Availability checking and remaining quota reporting
+
+**Why three providers?** Free-tier API quotas are limited. Amadeus provides 2,000 calls/month and AviationStack provides 100 calls/month. When both are exhausted, the Synthetic provider generates statistically realistic offers using historical route statistics from the database, ensuring the ML pipeline always has fresh training data.
+
+## 4.2 Amadeus API Integration
 
 The Amadeus Flight Offers Search API provides real-time flight pricing data. The collector queries this API for one-way economy flights across a predefined set of routes. Each API response contains multiple offers with pricing, timing, duration, and carrier information.
 
 **Why Amadeus?** It is the most comprehensive travel API available with a free tier (500 calls/month test, 2000/month production), providing data from multiple Global Distribution Systems (GDS). Unlike web scraping, API access provides structured, reliable data with consistent formatting.
 
-## 4.2 Route Rotation Logic
+## 4.3 AviationStack Integration
 
-The collector maintains a list of 200+ origin-destination pairs spanning domestic Indian routes (DEL-BOM, BLR-HYD), international routes (JFK-LHR, SIN-NRT), and cross-continental routes (BOM-JFK). Routes are processed in sequential batches with offset tracking.
+AviationStack provides real flight schedule data (departure/arrival times, airline, route) on its free tier (100 calls/month, HTTP only). Since AviationStack does not include pricing, the provider enriches schedule data with **historical price estimates** from the database — computing mean and standard deviation per route from past Amadeus data and sampling from that distribution.
 
-**Why rotation?** With API quota constraints (2000 calls/day), it is impossible to query all routes in every run. The rotation system ensures all routes receive coverage over time, preventing data bias toward frequently queried routes. The offset state persists across runs to ensure no route is permanently skipped.
+**Why hybrid?** Real schedule data ensures flight existence and timing are accurate. Only the price is estimated, and it's drawn from the same statistical distribution as real Amadeus prices for that route.
 
-## 4.3 Quota-Aware Scaling
+## 4.4 Synthetic Provider
+
+The Synthetic provider serves as the final fallback. It generates realistic flight offers using route statistics queried from the database:
+
+- **Price:** Gaussian distribution centered on the route's historical mean, with standard deviation from actual price variance
+- **Airlines:** Selected from airlines historically observed on each route
+- **Times:** Realistic departure times with computed durations
+- **Daily cap:** Maximum 200 synthetic offers per day, preventing data pollution
+- **Tagging:** All synthetic offers are tagged with `provider_name: 'synthetic'` and `fare_basis: 'SYNTHETIC'`
+
+**Ethical consideration:** Synthetic data is clearly tagged and capped. The ML pipeline can optionally filter it during training if needed.
+
+## 4.5 Route Rotation Logic
+
+The collector maintains a curated list of 50 high-value origin-destination pairs spanning domestic Indian routes (DEL-BOM, BLR-HYD), international routes (JFK-LHR, SIN-NRT), and cross-continental routes (BOM-JFK). Routes are processed in sequential batches with offset tracking and two date offsets (14 and 45 days ahead), yielding 100 API calls per run.
+
+**Why 50 routes?** With API quota constraints (2000 Amadeus calls/month + 100 AviationStack calls/month), a curated set of high-value routes ensures optimal quota utilization. The rotation system ensures all routes receive coverage over time, and the offset state persists across runs to ensure no route is permanently skipped.
+
+## 4.6 Quota-Aware Scaling
 
 The collector implements dynamic scaling based on remaining API quota:
 
@@ -239,24 +276,25 @@ RUNS_PER_DAY = 2
 API_BUFFER_PERCENT = 0.10
 ```
 
-Before each run, it computes the number of remaining API calls for the day and distributes them across the scheduled runs. A 10% buffer is reserved for error recovery and manual queries. This prevents quota exhaustion and ensures consistent data collection throughout the day.
+Before each run, it computes the number of remaining API calls for the day and distributes them across the scheduled runs. A 10% buffer is reserved for error recovery and manual queries. When Amadeus quota is exhausted, the Provider Manager automatically falls through to AviationStack and then Synthetic, ensuring data collection never halts.
 
-**When is this needed?** During periods of API instability or high retry rates, the buffer prevents the collector from consuming its entire daily quota on retries, leaving capacity for subsequent scheduled runs.
+**When is this needed?** During periods of API instability or high retry rates, the buffer prevents the collector from consuming its entire daily quota on retries. The failover chain ensures that even with zero API quota remaining, synthetic data keeps the pipeline fed.
 
-## 4.4 Failure Recovery
+## 4.7 Failure Recovery
 
 The collector implements exponential backoff for API rate limiting:
 
-- Initial retry delay: 1 second
+- Initial retry delay: 2 seconds
 - Backoff multiplier: 2x per retry
-- Maximum retries: 3
+- Maximum retries: 3 per provider
 - Specifically targets HTTP 429 (rate limit) responses
+- After 5+ consecutive 429s, Amadeus is marked unavailable for the remainder of the run
 
-**Why exponential backoff?** The Amadeus API enforces per-second rate limits. Linear retry patterns can trigger repeated rate limits, while exponential backoff with jitter spreads retry attempts across a wider time window.
+**Why exponential backoff?** The Amadeus API enforces per-second rate limits. Linear retry patterns can trigger repeated rate limits, while exponential backoff spreads retry attempts across a wider time window. The unavailability threshold prevents wasting time on a clearly exhausted API.
 
-## 4.5 Deduplication
+## 4.8 Deduplication
 
-Each flight offer is hashed using SHA-256 based on origin, destination, departure date, airline, price, and departure time. The database uses `ON CONFLICT DO NOTHING` for idempotent upserts.
+Each flight offer is hashed using SHA-256 based on origin, destination, departure date, airline, price, and departure time. The database uses `ON CONFLICT DO NOTHING` for idempotent upserts. The `provider_name` column tracks the data source for each offer, enabling downstream filtering by data quality.
 
 **Why SHA-256 hashing?** The Amadeus API may return identical offers across consecutive runs. Without deduplication, the dataset would contain duplicate records that inflate rolling statistics and bias model training. The hash-based approach is computationally efficient and collision-resistant.
 
