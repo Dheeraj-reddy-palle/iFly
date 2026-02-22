@@ -7,8 +7,7 @@
 
 A production-grade flight price prediction system with self-improving ML deployment, deterministic inference, and strict operational safeguards.
 
-<!-- Add your live demo link here after deployment -->
-<!-- 🌐 **[Live Demo](https://your-app.vercel.app)** -->
+🌐 **[Live Demo](https://i-fly-two.vercel.app)** · 📡 **[API Docs](https://ifly-fam5.onrender.com/docs)**
 
 ## Architecture
 
