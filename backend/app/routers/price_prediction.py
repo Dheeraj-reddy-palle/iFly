@@ -48,6 +48,12 @@ def load_deployed_model():
             
         model_path = deployed_reg.file_path
         if not os.path.exists(model_path):
+            # Fallback: try resolving relative to BASE_DIR/models/ using just the filename
+            filename = os.path.basename(model_path)
+            model_path = os.path.join(BASE_DIR, "models", filename)
+            logger.info(f"Original path not found, trying relative: {model_path}")
+        
+        if not os.path.exists(model_path):
             logger.warning(f"Deployed model file missing at path: {model_path}. Skipping load.")
             return
             

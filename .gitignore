@@ -15,9 +15,6 @@ __pycache__/
 *.save
 *.swp
 
-# Model artifacts (large binary files)
-backend/models/*.pkl
-
 # Frontend
 frontend/node_modules/
 frontend/dist/
