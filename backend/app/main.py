@@ -13,11 +13,22 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Environment-aware CORS setup
-if settings.env == "production" and settings.cors_origins:
-    origins = [o.strip() for o in settings.cors_origins.split(",")]
-else:
-    origins = ["*"]
+# CORS setup — always allow the production frontend
+origins = ["*"]
+
+if settings.env == "production":
+    origins = [
+        "https://i-fly-two.vercel.app",
+        "https://ifly-fam5.onrender.com",
+    ]
+    # Also add any extra origins from env var
+    if settings.cors_origins:
+        for o in settings.cors_origins.split(","):
+            o = o.strip()
+            if o and o not in origins:
+                origins.append(o)
+
+logger.info(f"CORS origins: {origins}")
 
 app.add_middleware(
     CORSMiddleware,
