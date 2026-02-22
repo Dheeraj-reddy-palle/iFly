@@ -25,6 +25,7 @@ class FlightOffer(Base):
     fare_basis = Column(String(50), nullable=True)
     scraped_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, server_default=func.current_timestamp(), index=True, nullable=False)
+    provider_name = Column(String(50), default="amadeus", nullable=False, server_default="amadeus")
     
     # Keeping indexes explicit if needed for clear Alembic generation
     __table_args__ = (

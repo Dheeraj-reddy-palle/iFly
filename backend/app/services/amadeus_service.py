@@ -236,7 +236,8 @@ class AmadeusService:
                     "number_of_bookable_seats": number_of_bookable_seats,
                     "cabin_class": cabin_class,
                     "fare_basis": fare_basis,
-                    "scraped_at": datetime.now()
+                    "scraped_at": datetime.now(),
+                    "provider_name": "amadeus"
                 }
                 
                 offers.append(offer)
