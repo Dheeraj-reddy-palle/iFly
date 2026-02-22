@@ -48,12 +48,12 @@ def load_deployed_model():
             
         model_path = deployed_reg.file_path
         if not os.path.exists(model_path):
-            # Fallback: try resolving relative to BASE_DIR/models/ using just the filename
+            # Fallback 1: try resolving relative to BASE_DIR/models/ using just the filename
             filename = os.path.basename(model_path)
             model_path = os.path.join(BASE_DIR, "models", filename)
             logger.info(f"Original path not found, trying relative: {model_path}")
         
-        # If .pkl doesn't exist, try decompressing .pkl.gz
+        # Fallback 2: if exact file not found, try .gz version
         if not os.path.exists(model_path) and os.path.exists(model_path + ".gz"):
             import gzip
             import shutil
@@ -63,8 +63,30 @@ def load_deployed_model():
                     shutil.copyfileobj(f_in, f_out)
             logger.info(f"Decompressed model to {model_path}")
         
+        # Fallback 3: if exact model not found, scan models/ dir for any available model
         if not os.path.exists(model_path):
-            logger.warning(f"Deployed model file missing at path: {model_path}. Skipping load.")
+            import gzip
+            import shutil
+            import glob
+            models_dir = os.path.join(BASE_DIR, "models")
+            # Look for any .pkl.gz first, then .pkl
+            gz_files = sorted(glob.glob(os.path.join(models_dir, "*.pkl.gz")), reverse=True)
+            pkl_files = sorted(glob.glob(os.path.join(models_dir, "*.pkl")), reverse=True)
+            
+            if gz_files:
+                gz_path = gz_files[0]
+                model_path = gz_path.replace(".gz", "")
+                logger.info(f"Fallback: decompressing available model {gz_path} ...")
+                with gzip.open(gz_path, 'rb') as f_in:
+                    with open(model_path, 'wb') as f_out:
+                        shutil.copyfileobj(f_in, f_out)
+                logger.info(f"Decompressed fallback model to {model_path}")
+            elif pkl_files:
+                model_path = pkl_files[0]
+                logger.info(f"Fallback: using available model {model_path}")
+        
+        if not os.path.exists(model_path):
+            logger.warning(f"No model file found anywhere. Skipping load.")
             return
             
         new_model = joblib.load(model_path)
